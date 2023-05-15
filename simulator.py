@@ -6,10 +6,24 @@ card_values = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
 card_suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
 
 card_name_to_value = {'A':14,'K':13,'Q':12,'J':11,'10':10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2}
+card_value_to_name = {14:'A',13:'K',12:'Q',11:'J',10:'10',9:'9',8:'8',7:'7',6:'6',5:'5',4:'4',3:'3',2:'2'}
+
 card_suits_to_string = {'Hearts':'♥','Diamonds':'♦','Clubs':'♣','Spades':'♠'}
 
-max_hand_size = 5
+hand_names = [
+    'Royal Flush',
+    'Straight Flush',
+    'Four of a Kind',
+    'Full House',
+    'Flush',
+    'Straight',
+    'Three of a Kind',
+    'Two Pair',
+    'One Pair',
+    'High Card'
+]
 
+max_hand_size = 7
 num_players = 8
 bb_cost = 2
 sb_cost = 1
@@ -68,24 +82,34 @@ class Player:
         self.chips += amount
 
 class Hand:
-    def __init__(self,cards):
+    def __init__(self, cards):
         self.cards = cards
         self.size = len(cards)
         self.validate()
 
-    def add_card(self,card):
+    def add_card(self, card):
         card.validate()
-        if self.size + 1 >= max_hand_size:
+        if self.size + 1 > 7:  # Assuming 7 cards is the max
             raise Exception(f"Can't add more card to hand of size {self.size}")
         self.cards.append(card)
 
     def validate(self):
-        assert len(self.cards) <= max_hand_size
         for card in self.cards:
             card.validate()
 
     def __str__(self):
         return ",".join([str(card) for card in self.cards])
+
+    def __lt__(self, other):
+        if self.size != 7 or other.size != 7:
+            raise Exception("Hands can only be compared if they both contain exactly 7 cards.")
+        return compare_hands(extract_best_hand(self)[1], extract_best_hand(other)[1]) < 0
+
+    def __eq__(self, other):
+        if self.size != 7 or other.size != 7:
+            raise Exception("Hands can only be compared if they both contain exactly 7 cards.")
+        return compare_hands(extract_best_hand(self)[1], extract_best_hand(other)[1]) == 0
+
 
 
 class Round:
@@ -96,6 +120,7 @@ class Round:
         self.players_bets = [0 for i in range(self.total_players)]
         self.players_playing = [True for i in range(self.total_players)]
         self.players_actionable = [True for i in range(self.total_players)]
+        self.players_all_in = [False for i in range(self.total_players)]
         self.players_split_pot = [True for i in range(self.total_players)]
         self.players_name_to_id = {player.name:i for i,player in enumerate(players)}
         self.curr_stage = "Initialization"
@@ -188,9 +213,9 @@ class Round:
         while not valid_input:
             valid_input = True
             action = input(f"Player {self.players[id].name} (Fold 'F' / Check {to_call} 'C' / Raise x 'R' x / All-in 'A'): ")
-            if action == 'F':
+            if action.upper() == 'F':
                 self.players_playing[id] = False
-            elif action == 'C':
+            elif action.upper() == 'C':
                 if to_call != 0:
                     valid_bet = self.bet(player,to_call)
                     if valid_bet:
@@ -198,7 +223,7 @@ class Round:
                     else:
                         valid_input = False
                         print("Invalid move. Not enough chips.")
-            elif action[0] == 'R':
+            elif action[0].upper() == 'R':
                 try:
                     raise_amount = int(action[1:])
                     if raise_amount <= to_call or not self.bet(player, raise_amount):
@@ -210,9 +235,10 @@ class Round:
                 except:
                     valid_input = False
                     print("Invalid input. Please try again.")
-            elif action == 'A':
+            elif action.upper() == 'A':
                 if self.bet(player, player.chips):
                     self.history.append(f"{player.name} goes all in with {player.chips}")
+                    self.players_all_in[id] = True
                     self.renew_action_for_insufficient_bet()
                 else:
                     valid_input = False
@@ -223,17 +249,55 @@ class Round:
         max_bet = max(self.players_bets)
         for i in range(self.total_players):
             to_call = max_bet - self.players_bets[i]
-            if self.players_bets[i] < max_bet and self.players_playing[i] and self.players[i].chips >= to_call:
+            if self.players_bets[i] < max_bet and self.players_playing[i] and self.players[i].chips >= to_call and (not self.players_all_in[i]):
                 self.players_actionable[i] = True
 
     def renew_action_for_all_playing(self):
         for i in range(self.total_players):
-            if self.players_playing[i]:
+            if self.players_playing[i] and (not self.players_all_in[i]):
                 self.players_actionable[i] = True
 
     def reset_bets(self):
         for i in range(self.total_players):
             self.players_bets[i] = 0
+
+    def distribute_pot(self):
+        # Find the best hand among the remaining players
+        best_hand = None
+        winners = []
+
+        for i, player in enumerate(self.players):
+            if self.players_playing[i]:
+                hand = Hand(player.hand.cards + self.flop.cards)
+                if best_hand is None or hand > best_hand:
+                    best_hand = hand
+                    winners = [player]
+                elif hand == best_hand:
+                    winners.append(player)
+
+        # Distribute the pot among the winners
+        for winner in winners:
+            chips_won = round(self.pot / len(winners),2)
+            print(f"Winner is {winner.name}! Winner hand is {best_hand}! Won chips {chips_won}!")
+            winner.increment_chips(chips_won)
+
+    def clean_round(self):
+        # Reset the round-specific variables
+        self.pot = 0
+        self.deck = Deck()
+        self.deck.shuffle()
+        self.players_bets = [0 for _ in range(self.total_players)]
+        self.players_playing = [True for _ in range(self.total_players)]
+        self.players_actionable = [True for _ in range(self.total_players)]
+        self.players_split_pot = [True for _ in range(self.total_players)]
+        self.curr_stage = "Initialization"
+        self.history = []
+        self.flop = Hand([])
+        self.init_deck()
+
+        # Return the cards to the deck and shuffle
+        for player in self.players:
+            player.hand = Hand([])
 
     def print_state(self):
         print("-----------------------")
@@ -244,9 +308,6 @@ class Round:
             print(f"{player.name} {player.hand} Bets:{self.players_bets[i]} Balance:{player.chips} "
                   f"Actionable:{pretty_bool(self.players_actionable[i])}. Playing:{pretty_bool(self.players_playing[i])}")
         print("-----------------------")
-
-
-
 
 
 class Game:
