@@ -1,116 +1,6 @@
-import random
-from util import *
-
-card_ranks = ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2']
-card_values = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
-card_suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
-
-card_name_to_value = {'A':14,'K':13,'Q':12,'J':11,'10':10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2}
-card_value_to_name = {14:'A',13:'K',12:'Q',11:'J',10:'10',9:'9',8:'8',7:'7',6:'6',5:'5',4:'4',3:'3',2:'2'}
-
-card_suits_to_string = {'Hearts':'♥','Diamonds':'♦','Clubs':'♣','Spades':'♠'}
-
-hand_names = [
-    'Royal Flush',
-    'Straight Flush',
-    'Four of a Kind',
-    'Full House',
-    'Flush',
-    'Straight',
-    'Three of a Kind',
-    'Two Pair',
-    'One Pair',
-    'High Card'
-]
-
-max_hand_size = 7
-num_players = 8
-bb_cost = 2
-sb_cost = 1
-buyin_size = 100
-
-class Card:
-    def __init__(self,rank,suit):
-        try:
-            self.rank = rank
-            self.value = card_name_to_value[rank]
-            self.suit = suit
-            self.validate()
-        except:
-            raise Exception("Card Initialization Error!")
-
-    def validate(self):
-        assert self.rank in card_ranks
-        assert self.suit in card_suits
-
-    def __str__(self):
-        return f"{card_suits_to_string[self.suit]}{self.rank}"
-
-class Deck:
-    def __init__(self):
-        self.deck = []
-        for rank in card_ranks:
-            for suit in card_suits:
-                self.deck.append(Card(rank,suit))
-        self.size = len(self.deck)
-        assert self.size == 52
-
-    def shuffle(self):
-        random.shuffle(self.deck)
-
-    def draw(self):
-        card = self.deck.pop()
-        self.size -= 1
-        return card
-
-class Player:
-    def __init__(self,name,hand,chips):
-        self.name = name
-        self.hand = hand
-        self.chips = chips
-
-    def receive_card(self,card):
-        self.hand.add_card(card)
-
-    def empty_hand(self):
-        self.hand = []
-
-    def decrement_chips(self,amount):
-        self.chips -= amount
-
-    def increment_chips(self,amount):
-        self.chips += amount
-
-class Hand:
-    def __init__(self, cards):
-        self.cards = cards
-        self.size = len(cards)
-        self.validate()
-
-    def add_card(self, card):
-        card.validate()
-        if self.size + 1 > 7:  # Assuming 7 cards is the max
-            raise Exception(f"Can't add more card to hand of size {self.size}")
-        self.cards.append(card)
-
-    def validate(self):
-        for card in self.cards:
-            card.validate()
-
-    def __str__(self):
-        return ",".join([str(card) for card in self.cards])
-
-    def __lt__(self, other):
-        if self.size != 7 or other.size != 7:
-            raise Exception("Hands can only be compared if they both contain exactly 7 cards.")
-        return compare_hands(extract_best_hand(self)[1], extract_best_hand(other)[1]) < 0
-
-    def __eq__(self, other):
-        if self.size != 7 or other.size != 7:
-            raise Exception("Hands can only be compared if they both contain exactly 7 cards.")
-        return compare_hands(extract_best_hand(self)[1], extract_best_hand(other)[1]) == 0
-
-
+from lib.core.config import *
+from .core import Deck,Hand,Player
+from .util import *
 
 class Round:
     def __init__(self,players):
@@ -149,7 +39,6 @@ class Round:
         self.curr_stage = "Flop"
         self.print_state()
         self.action()
-
 
         self.draw_flop(1)
         self.curr_stage = "Turn"
@@ -278,7 +167,7 @@ class Round:
         # Distribute the pot among the winners
         for winner in winners:
             chips_won = round(self.pot / len(winners),2)
-            print(f"Winner is {winner.name}! Winner hand is {best_hand}! Won chips {chips_won}!")
+            print(f"Winner is {winner.name}! Winner hand is {best_hand.best_hand_object} {best_hand.best_hand_name}! Won chips {chips_won}!")
             winner.increment_chips(chips_won)
 
     def clean_round(self):
@@ -337,6 +226,3 @@ class Game:
     def check_players(self):
         self.players = [p for p in self.players if p.chips > 0]
 
-if __name__ == "__main__":
-    game = Game()
-    game.play_game()
